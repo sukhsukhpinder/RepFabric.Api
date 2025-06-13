@@ -1,0 +1,6 @@
+@RepFabric.Api_HostAddress = http://localhost:5289
+
+GET {{RepFabric.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

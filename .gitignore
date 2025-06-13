@@ -1,0 +1,103 @@
+## Ignore Visual Studio temporary files, build results, and
+## user-specific files
+
+# Build Folders (bin, obj, etc.)
+**/bin/
+**/obj/
+**/out/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+.vscode/
+.idea/
+
+# Build results
+*.dll
+*.exe
+*.app
+*.so
+*.dylib
+*.lib
+*.pdb
+
+# Publish and NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+*.nuspec
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# Web files
+wwwroot/lib/
+node_modules/
+bower_components/
+libman.json
+libman.cache/
+
+# Logs
+*.log
+logs/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Rider IDE
+.idea/
+*.sln.iml
+
+# Azure settings
+*.azurePubxml
+*.publishsettings
+
+# Resharper
+_ReSharper*/
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+
+# DotCover
+*.dcvr
+
+# VS Code
+.vscode/
+.vs/
+
+# Tests and Coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+
+# Others
+.env
+*.db
+*.sqlite
+*.bak
+*.mdf
+*.ldf
+
+# Local tool settings
+.localtool.manifest.json
+
+# EF Core Migrations Snapshots
+**/*ModelSnapshot.cs
+
+
+# Optional - skip generated code
+Generated/
+*.g.cs
+*.g.i.cs
