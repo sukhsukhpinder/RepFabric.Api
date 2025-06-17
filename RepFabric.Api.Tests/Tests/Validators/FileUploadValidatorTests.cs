@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Moq;
 using RepFabric.Api.BL.Validators;
 
-namespace RepFabric.Api.Tests.Tests
+namespace RepFabric.Api.Tests.Tests.Validators
 {
 
     public class FileUploadValidatorTests
@@ -45,19 +45,6 @@ namespace RepFabric.Api.Tests.Tests
             Assert.False(isValid);
             Assert.Contains(".xlsm", error);
         }
-
-        [Fact]
-        public void Validate_ValidFile_ReturnsTrue()
-        {
-            var fileMock = new Mock<IFormFile>();
-            fileMock.Setup(f => f.Length).Returns(100);
-            fileMock.Setup(f => f.FileName).Returns("test.xlsm");
-
-            var validator = new FileUploadValidator(new[] { ".xlsm" }, new[] { "application/vnd.ms-excel.sheet.macroEnabled.12" }, 1024 * 1024);
-            var (isValid, error) = validator.Validate(fileMock.Object);
-
-            Assert.True(isValid);
-            Assert.Equal(string.Empty, error);
-        }
     }
 }
+

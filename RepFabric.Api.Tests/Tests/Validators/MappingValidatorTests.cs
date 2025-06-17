@@ -1,8 +1,7 @@
-﻿
-using RepFabric.Api.BL.Validators;
+﻿using RepFabric.Api.BL.Validators;
 using RepFabric.Api.Models.Request;
 
-namespace RepFabric.Api.Tests.Tests
+namespace RepFabric.Api.Tests.Tests.Validators
 {
 
     public class MappingValidatorTests

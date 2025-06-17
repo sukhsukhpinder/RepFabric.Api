@@ -1,9 +1,22 @@
+using DocumentFormat.OpenXml.InkML;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using RepFabric.Api.BL.Constants;
+using RepFabric.Api.BL.Database;
 using RepFabric.Api.BL.Enums;
+using RepFabric.Api.BL.Helper;
 using RepFabric.Api.BL.Interfaces;
+using RepFabric.Api.Models.Common;
+using RepFabric.Api.Models.Database;
 using RepFabric.Api.Models.Request;
+using RepFabric.Api.Models.Response;
+using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Mapping = RepFabric.Api.Models.Request.Mapping;
 
 namespace RepFabric.Api.BL.Services
 {
@@ -11,17 +24,72 @@ namespace RepFabric.Api.BL.Services
     {
         private readonly IFileStorageService _fileStorage;
         private readonly string _templateFolder;
-
-        public ExcelTemplateService(IFileStorageService fileStorage)
+        private readonly IYoxelSyncService _yoxelSyncService;
+        private readonly YoxelSettings _yoxelSettings;
+        private readonly RepFabricContext _dbContext;
+        public ExcelTemplateService(IFileStorageService fileStorage, IYoxelSyncService yoxelSyncService, IOptions<YoxelSettings> yoxelSettings, RepFabricContext dbContext)
         {
             _fileStorage = fileStorage;
             // Assume local folder is "Templates" for local storage
             _templateFolder = "Templates";
+            _yoxelSyncService = yoxelSyncService;
+            _yoxelSettings = yoxelSettings.Value;
+            _dbContext = dbContext; // Assign context
         }
 
-        public async Task<byte[]> FillTemplateAsync(string templateFileName, ExcelMappingRequest request)
+        private async Task<PurchaseOrderResponse> GetOrderDetailsAysnc(string orderId)
         {
-            Stream templateStream = await _fileStorage.GetFileAsync(templateFileName);
+            return await _yoxelSyncService.GetAsync<PurchaseOrderResponse>(
+                            _yoxelSettings.BaseAddress,
+                            YoxelConstants.PurchaseOrder,
+                            new Dictionary<string, string> { { "orderId", orderId } },
+                            _yoxelSettings.AuthToken
+                        );
+        }
+
+        public async Task SaveTemplateMappingAsync(string templateFileName, string mappingJson)
+        {
+            var entity = new TemplateMapping
+            {
+                TemplateFileName = templateFileName,
+                MappingJson = mappingJson
+            };
+
+            _dbContext.TemplateMappings.Add(entity);
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task<bool> DeleteTemplateMappingAsync(int id)
+        {
+            var entity = await _dbContext.TemplateMappings.FindAsync(id);
+            if (entity == null)
+                return false;
+
+            _dbContext.TemplateMappings.Remove(entity);
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+        public async Task<IEnumerable<TemplateMapping>> GetTemplateMappingsAsync()
+        {
+            return await _dbContext.TemplateMappings.AsNoTracking().ToListAsync();
+        }
+        public async Task<bool> UpdateTemplateMappingAsync(int id, string templateFileName, string mappingJson)
+        {
+            var entity = await _dbContext.TemplateMappings.FindAsync(id);
+            if (entity == null)
+                return false;
+
+            entity.TemplateFileName = templateFileName;
+            entity.MappingJson = mappingJson;
+            _dbContext.TemplateMappings.Update(entity);
+            return await _dbContext.SaveChangesAsync() > 0;
+        }
+
+        public async Task<byte[]> FillTemplateAsync(string orderId, int mappingId)
+        {
+            var template = await _dbContext.TemplateMappings.Where(m => m.Id == mappingId).FirstOrDefaultAsync();
+
+            Stream templateStream = await _fileStorage.GetFileAsync(template.TemplateFileName);
 
             using var ms = new MemoryStream();
             await templateStream.CopyToAsync(ms);
@@ -33,17 +101,35 @@ namespace RepFabric.Api.BL.Services
                 var worksheetPart = workbookPart.WorksheetParts.First();
                 var sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
 
-                foreach (var mapping in request.Mappings)
+                var orderDetails = await GetOrderDetailsAysnc(orderId);
+                var templateMapping = JsonSerializer.Deserialize<List<Mapping>>(template.MappingJson) ?? new List<Mapping>();
+                foreach (var mapping in templateMapping)
                 {
                     var cellRef = mapping.Cell.ToUpperInvariant();
                     var cell = GetOrCreateCell(sheetData, cellRef);
 
-                    // Always update the cell value
-                    cell.CellValue = new CellValue(mapping.AttributeName ?? string.Empty);
-                    cell.DataType = CellValues.String;
+                    if (mapping.FieldType.Equals(nameof(FieldTypes.Text), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
+                    {
+                        // Always update the cell value
+                        var value = PurchaseOrderResponseHelper.GetByJsonPropertyName<string>(orderDetails, mapping.AttributeName);
+                        cell.CellValue = new CellValue(value ?? string.Empty);
+                        cell.DataType = CellValues.String;
+                    }
+                    else if (mapping.FieldType.Equals(nameof(FieldTypes.LineItem), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
+                    {
+                        var values = orderDetails.LineItems.GetValuesByJsonPropertyName<int>(mapping.AttributeName);
+                        string startCellRef = mapping.Cell.ToUpperInvariant();
 
+                        for (int i = 0; i < values.Count; i++)
+                        {
+                            var currentCellRef = IncrementCellReference(startCellRef, i);
+                            cell = GetOrCreateCell(sheetData, currentCellRef);
+                            cell.CellValue = new CellValue(values[i]);
+                            cell.DataType = CellValues.Number;
+                        }
+                    }
                     // If dropdown, update the existing data validation options if present
-                    if (mapping.FieldType.Equals(nameof(FieldTypes.Dropdown), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
+                    else if (mapping.FieldType.Equals(nameof(FieldTypes.Dropdown), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
                     {
                         var validations = worksheetPart.Worksheet.Elements<DataValidations>().FirstOrDefault();
                         if (validations != null)
@@ -64,6 +150,17 @@ namespace RepFabric.Api.BL.Services
 
             ms.Position = 0;
             return ms.ToArray();
+        }
+
+        private static string IncrementCellReference(string cellRef, int increment)
+        {
+            var match = Regex.Match(cellRef, @"^([A-Z]+)(\d+)$");
+            if (!match.Success)
+                throw new ArgumentException("Invalid cell reference.");
+
+            var col = match.Groups[1].Value;
+            var row = int.Parse(match.Groups[2].Value);
+            return $"{col}{row + increment}";
         }
 
         // Utility to get or create a cell in OpenXML

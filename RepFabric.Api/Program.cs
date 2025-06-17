@@ -1,11 +1,15 @@
 using Amazon.S3;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
+using RepFabric.Api.BL.Database;
 using RepFabric.Api.BL.Enums;
 using RepFabric.Api.BL.Interfaces;
 using RepFabric.Api.BL.Services;
 using RepFabric.Api.Extensions;
 using RepFabric.Api.Models.Common;
+using System.Reflection;
+
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,9 +27,13 @@ builder.Services.AddSwaggerGen(options =>
         Title = "My API",
         Version = "v1"
     });
+    string xmlFIle = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlFIle));
+
 });
 builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
 builder.Services.Configure<ExcelUploadSettings>(builder.Configuration.GetSection("ExcelUpload"));
+builder.Services.Configure<YoxelSettings>(builder.Configuration.GetSection("Yoxel"));
 
 builder.Services.AddCors(options =>
 {
@@ -37,8 +45,15 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services.AddHttpClient();
+builder.Services.AddTransient<IYoxelSyncService, YoxelSyncService>();
+
 // Register AWS S3 client
 builder.Services.AddAWSService<IAmazonS3>();
+
+// Register RepFabricContext with PostgreSQL
+builder.Services.AddDbContext<RepFabricContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register the correct storage service based on configuration
 builder.Services.AddConfiguredFileStorageService();

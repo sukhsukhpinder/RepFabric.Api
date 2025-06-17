@@ -7,7 +7,7 @@ namespace RepFabric.Api.BL.Validators
 {
     public static class MappingValidator
     {
-        private static readonly string[] AllowedFieldTypes = { nameof(FieldTypes.Text), nameof(FieldTypes.Dropdown) }; // Extend as needed
+        private static readonly string[] AllowedFieldTypes = { nameof(FieldTypes.Text), nameof(FieldTypes.Dropdown), nameof(FieldTypes.LineItem) }; // Extend as needed
         public static IEnumerable<ValidationResult> ValidateAll(IEnumerable<Mapping> mappings)
         {
             return mappings

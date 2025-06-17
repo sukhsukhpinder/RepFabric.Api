@@ -5,7 +5,7 @@ namespace RepFabric.Api.Models.Request
     public class ExcelMappingRequest
     {
         [Required(ErrorMessage = "TemplateFileName is required.")]
-        public string TemplateFileName { get; set; }
+        public string TemplateFileName { get; set; }        
 
         [Required]
         [MinLength(1, ErrorMessage = "At least one mapping is required.")]

@@ -3,6 +3,7 @@
     public enum FieldTypes
     {
         Text,
+        LineItem,
         Dropdown
     }
 }
