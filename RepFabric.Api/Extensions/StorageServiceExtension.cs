@@ -9,8 +9,22 @@ using RepFabric.Api.Models.Common;
 
 namespace RepFabric.Api.Extensions
 {
+    /// <summary>
+    /// Provides extension methods for configuring file storage services in the application's dependency injection container.
+    /// </summary>
     public static class StorageServiceExtension
     {
+        /// <summary>
+        /// Registers an <see cref="IFileStorageService"/> implementation with the dependency injection container
+        /// based on the configured <see cref="StorageSettings.StorageType"/>.
+        /// </summary>
+        /// <param name="services">The service collection to add the storage service to.</param>
+        /// <returns>The updated <see cref="IServiceCollection"/>.</returns>
+        /// <remarks>
+        /// - If <c>StorageType</c> is "S3", registers <see cref="S3FileStorageService"/>.
+        /// - If <c>StorageType</c> is "Sharepoint", throws <see cref="NotImplementedException"/> (placeholder for future implementation).
+        /// - Otherwise, registers <see cref="LocalFileStorageService"/> as the default.
+        /// </remarks>
         public static IServiceCollection AddConfiguredFileStorageService(this IServiceCollection services)
         {
             services.AddTransient<IFileStorageService>(sp =>

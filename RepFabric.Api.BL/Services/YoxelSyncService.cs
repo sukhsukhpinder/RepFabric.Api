@@ -12,17 +12,36 @@ using System.Threading.Tasks;
 
 namespace RepFabric.Api.BL.Services
 {
+    /// <summary>
+    /// Service for synchronizing data with Yoxel endpoints using HTTP requests.
+    /// Implements <see cref="IYoxelSyncService"/> to provide generic GET operations
+    /// with optional route parameters and basic authentication.
+    /// </summary>
     public class YoxelSyncService : IYoxelSyncService
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<IYoxelSyncService> _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="YoxelSyncService"/> class.
+        /// </summary>
+        /// <param name="httpClientFactory">Factory for creating HTTP client instances.</param>
+        /// <param name="logger">Logger for logging request information and errors.</param>
         public YoxelSyncService(IHttpClientFactory httpClientFactory, ILogger<IYoxelSyncService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
 
+        /// <summary>
+        /// Sends a GET request to the specified Yoxel endpoint and deserializes the response to the specified type.
+        /// </summary>
+        /// <typeparam name="T">The type to deserialize the response to.</typeparam>
+        /// <param name="baseUrl">The base URL of the Yoxel API.</param>
+        /// <param name="route">The route or endpoint to call, with optional placeholders for route parameters.</param>
+        /// <param name="routeParams">Optional dictionary of route parameters to replace in the route.</param>
+        /// <param name="basicAuth">Optional basic authentication token.</param>
+        /// <returns>The deserialized response object, or null if the response is empty.</returns>
         public async Task<T?> GetAsync<T>(string baseUrl, string route, IDictionary<string, string>? routeParams = null, string? basicAuth = null)
         {
             var client = _httpClientFactory.CreateClient();
