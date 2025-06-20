@@ -1,8 +1,9 @@
+using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.DataModel;
 using Amazon.S3;
-using Microsoft.EntityFrameworkCore;
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
-using RepFabric.Api.BL.Database;
 using RepFabric.Api.BL.Enums;
 using RepFabric.Api.BL.Interfaces;
 using RepFabric.Api.BL.Services;
@@ -51,14 +52,24 @@ builder.Services.AddTransient<IYoxelSyncService, YoxelSyncService>();
 // Register AWS S3 client
 builder.Services.AddAWSService<IAmazonS3>();
 
-// Register RepFabricContext with PostgreSQL
-builder.Services.AddDbContext<RepFabricContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-
 // Register the correct storage service based on configuration
 builder.Services.AddConfiguredFileStorageService();
 
 builder.Services.AddTransient<IExcelTemplateService, ExcelTemplateService>();
+// Register AWS DynamoDB Client
+builder.Services.AddAWSService<IAmazonDynamoDB>();
+
+// Register DynamoDBContext
+builder.Services.AddSingleton<DynamoDBContext>(sp =>
+{
+    var client = sp.GetRequiredService<IAmazonDynamoDB>();
+    var config = new DynamoDBContextConfig
+    {
+        Conversion = DynamoDBEntryConversion.V2
+    };
+
+    return new DynamoDBContext(client, config);
+});
 
 var app = builder.Build();
 

@@ -1,22 +1,24 @@
-﻿using System;
+﻿using Amazon.DynamoDBv2.DataModel;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace RepFabric.Api.Models.Database
+namespace RepFabric.Api.Models.DynamoDb
 {
     /// <summary>
     /// Represents a mapping configuration for an Excel template.
     /// Stores the template file name and the mapping details as a JSON string.
     /// </summary>
+    [DynamoDBTable("TemplateMappings")]
     public class TemplateMapping
     {
         /// <summary>
         /// Gets or sets the unique identifier for the template mapping.
         /// </summary>
-        [Key]
+        [DynamoDBHashKey]
         public int Id { get; set; }
 
         /// <summary>
@@ -29,5 +31,8 @@ namespace RepFabric.Api.Models.Database
         /// This JSON defines how data fields are mapped to cells in the template.
         /// </summary>
         public string MappingJson { get; set; } // JSON string representing the mapping details
+
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
 }

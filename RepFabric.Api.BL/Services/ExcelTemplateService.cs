@@ -1,14 +1,12 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using RepFabric.Api.BL.Constants;
-using RepFabric.Api.BL.Database;
 using RepFabric.Api.BL.Enums;
 using RepFabric.Api.BL.Helper;
 using RepFabric.Api.BL.Interfaces;
 using RepFabric.Api.Models.Common;
-using RepFabric.Api.Models.Database;
+using RepFabric.Api.Models.DynamoDb;
 using RepFabric.Api.Models.Request;
 using RepFabric.Api.Models.Response;
 using System.Text.Json;
@@ -26,7 +24,7 @@ namespace RepFabric.Api.BL.Services
         private readonly string _templateFolder;
         private readonly IYoxelSyncService _yoxelSyncService;
         private readonly YoxelSettings _yoxelSettings;
-        private readonly RepFabricContext _dbContext;
+        private readonly DynamoDbTemplateMappingService _dynamoDbTemplateMappingService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ExcelTemplateService"/> class.
@@ -38,15 +36,15 @@ namespace RepFabric.Api.BL.Services
         public ExcelTemplateService(
             IFileStorageService fileStorage,
             IYoxelSyncService yoxelSyncService,
-            IOptions<YoxelSettings> yoxelSettings,
-            RepFabricContext dbContext)
+            DynamoDbTemplateMappingService dynamoDbTemplateMappingService,
+            IOptions<YoxelSettings> yoxelSettings)
         {
             _fileStorage = fileStorage;
             // Assume local folder is "Templates" for local storage
             _templateFolder = "Templates";
             _yoxelSyncService = yoxelSyncService;
             _yoxelSettings = yoxelSettings.Value;
-            _dbContext = dbContext;
+
         }
 
         /// <summary>
@@ -67,52 +65,39 @@ namespace RepFabric.Api.BL.Services
         /// <inheritdoc/>
         public async Task SaveTemplateMappingAsync(string templateFileName, string mappingJson)
         {
-            var entity = new TemplateMapping
-            {
-                TemplateFileName = templateFileName,
-                MappingJson = mappingJson
-            };
-
-            _dbContext.TemplateMappings.Add(entity);
-            await _dbContext.SaveChangesAsync();
+            await _dynamoDbTemplateMappingService.CreateAsync(templateFileName, mappingJson);
         }
 
         /// <inheritdoc/>
         public async Task<bool> DeleteTemplateMappingAsync(int id)
         {
-            var entity = await _dbContext.TemplateMappings.FindAsync(id);
-            if (entity == null)
-                return false;
-
-            _dbContext.TemplateMappings.Remove(entity);
-            await _dbContext.SaveChangesAsync();
-            return true;
+            await _dynamoDbTemplateMappingService.DeleteAsync(id);
+            return true; // Assuming delete always succeeds, as per DynamoDB behavior
         }
 
         /// <inheritdoc/>
         public async Task<IEnumerable<TemplateMapping>> GetTemplateMappingsAsync()
         {
-            return await _dbContext.TemplateMappings.AsNoTracking().ToListAsync();
+            return await _dynamoDbTemplateMappingService.GetAllAsync();
         }
 
         /// <inheritdoc/>
         public async Task<bool> UpdateTemplateMappingAsync(int id, string templateFileName, string mappingJson)
         {
-            var entity = await _dbContext.TemplateMappings.FindAsync(id);
-            if (entity == null)
-                return false;
-
-            entity.TemplateFileName = templateFileName;
-            entity.MappingJson = mappingJson;
-            _dbContext.TemplateMappings.Update(entity);
-            return await _dbContext.SaveChangesAsync() > 0;
+            await _dynamoDbTemplateMappingService.UpdateAsync(id, new TemplateMapping
+            {
+                Id = id,
+                TemplateFileName = templateFileName,
+                MappingJson = mappingJson
+            });
+            return true; // Assuming update always succeeds, as per DynamoDB behavior
         }
 
         /// <inheritdoc/>
         public async Task<byte[]> FillTemplateAsync(string orderId, int mappingId)
         {
             // Retrieve the template mapping from the database
-            var template = await _dbContext.TemplateMappings.Where(m => m.Id == mappingId).FirstOrDefaultAsync();
+            var template = await _dynamoDbTemplateMappingService.GetByIdAsync(mappingId);
 
             // Get the template file as a stream
             Stream templateStream = await _fileStorage.GetFileAsync(template.TemplateFileName);
@@ -137,26 +122,56 @@ namespace RepFabric.Api.BL.Services
 
                     if (mapping.FieldType.Equals(nameof(FieldTypes.Text), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
                     {
-                        // Update the cell value with text data
-                        var value = PurchaseOrderResponseHelper.GetByJsonPropertyName<string>(orderDetails, mapping.AttributeName);
-                        cell.CellValue = new CellValue(value ?? string.Empty);
-                        cell.DataType = CellValues.String;
+                        // Check if attributeName contains a comma (for combined fields)
+                        if (mapping.AttributeName.Contains(","))
+                        {
+                            var fields = mapping.AttributeName.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            var values = new List<string>();
+                            foreach (var field in fields)
+                            {
+                                var value = PurchaseOrderResponseHelper.GetByJsonPropertyName<string>(orderDetails, field);
+                                if (!string.IsNullOrEmpty(value))
+                                    values.Add(value);
+                            }
+                            cell.CellValue = new CellValue(string.Join(", ", values));
+                            cell.DataType = CellValues.String;
+                        }
+                        else
+                        {
+                            // Single field
+                            var value = PurchaseOrderResponseHelper.GetByJsonPropertyName<string>(orderDetails, mapping.AttributeName);
+                            cell.CellValue = new CellValue(value ?? string.Empty);
+                            cell.DataType = CellValues.String;
+                        }
                     }
                     else if (mapping.FieldType.Equals(nameof(FieldTypes.LineItem), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
                     {
                         // Fill line item values in consecutive cells
-                        var values = orderDetails.LineItems.GetValuesByJsonPropertyName<int>(mapping.AttributeName);
-                        string startCellRef = mapping.Cell.ToUpperInvariant();
-
-                        for (int i = 0; i < values.Count; i++)
+                        var values = orderDetails.LineItems.GetValuesByJsonPropertyName<string>(mapping.AttributeName);
+                        if (values.Count == 0)
                         {
-                            var currentCellRef = IncrementCellReference(startCellRef, i);
-                            cell = GetOrCreateCell(sheetData, currentCellRef);
-                            cell.CellValue = new CellValue(values[i]);
-                            cell.DataType = CellValues.Number;
+                            // fallback to int if string is not found
+                            var intValues = orderDetails.LineItems.GetValuesByJsonPropertyName<int>(mapping.AttributeName);
+                            for (int i = 0; i < intValues.Count; i++)
+                            {
+                                var currentCellRef = IncrementCellReference(cellRef, i);
+                                cell = GetOrCreateCell(sheetData, currentCellRef);
+                                cell.CellValue = new CellValue(intValues[i]);
+                                cell.DataType = CellValues.Number;
+                            }
+                        }
+                        else
+                        {
+                            for (int i = 0; i < values.Count; i++)
+                            {
+                                var currentCellRef = IncrementCellReference(cellRef, i);
+                                cell = GetOrCreateCell(sheetData, currentCellRef);
+                                cell.CellValue = new CellValue(values[i]);
+                                cell.DataType = CellValues.String;
+                            }
                         }
                     }
-                    // Update dropdown data validation options if present
+                    // Handle dropdown fields
                     else if (mapping.FieldType.Equals(nameof(FieldTypes.Dropdown), StringComparison.OrdinalIgnoreCase) && mapping.AttributeName is not null)
                     {
                         var validations = worksheetPart.Worksheet.Elements<DataValidations>().FirstOrDefault();
@@ -167,7 +182,8 @@ namespace RepFabric.Api.BL.Services
                                 if (validation.SequenceOfReferences != null &&
                                     validation.SequenceOfReferences.InnerText.Split(' ').Any(r => r.Equals(cellRef, StringComparison.OrdinalIgnoreCase)))
                                 {
-                                    validation.Formula1 = new Formula1("\"" + string.Join(",", mapping.AttributeName) + "\"");
+                                    // For now, just set the value from the attributeName
+                                    validation.Formula1 = new Formula1("\"" + mapping.AttributeName + "\"");
                                 }
                             }
                         }
@@ -238,5 +254,6 @@ namespace RepFabric.Api.BL.Services
             }
             return Enumerable.Empty<string>();
         }
+
     }
 }

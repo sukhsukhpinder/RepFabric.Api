@@ -8,7 +8,7 @@ using Moq;
 using RepFabric.Api.BL.Interfaces;
 using RepFabric.Api.Controllers;
 using RepFabric.Api.Models.Common;
-using RepFabric.Api.Models.Database;
+using RepFabric.Api.Models.DynamoDb;
 using RepFabric.Api.Models.Request;
 using System.Collections.Generic;
 using System.IO;
@@ -34,8 +34,10 @@ namespace RepFabric.Api.Tests.Tests.Controller
         private ExcelController CreateController()
         {
             var configMock = new Mock<IConfiguration>();
+            var dynamoDbTemplateMappingServiceMock = new Mock<IDynamoDbTemplateMappingService>();
             return new ExcelController(
                 _fileStorageMock.Object,
+                dynamoDbTemplateMappingServiceMock.Object,
                 _excelTemplateServiceMock.Object,
                 configMock.Object,
                 _envMock.Object,

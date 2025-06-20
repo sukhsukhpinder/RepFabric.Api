@@ -1,4 +1,5 @@
-using RepFabric.Api.Models.Database;
+
+using RepFabric.Api.Models.DynamoDb;
 using RepFabric.Api.Models.Request;
 
 namespace RepFabric.Api.BL.Interfaces

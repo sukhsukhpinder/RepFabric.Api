@@ -4,7 +4,7 @@ using RepFabric.Api.BL.Enums;
 using RepFabric.Api.BL.Interfaces;
 using RepFabric.Api.BL.Validators;
 using RepFabric.Api.Models.Common;
-using RepFabric.Api.Models.Database;
+using RepFabric.Api.Models.DynamoDb;
 using RepFabric.Api.Models.Request;
 using RepFabric.Api.Models.Response;
 
@@ -18,6 +18,7 @@ namespace RepFabric.Api.Controllers
     public class ExcelController : ControllerBase
     {
         private readonly IFileStorageService _fileStorage;
+        private readonly IDynamoDbTemplateMappingService _dynamoDbTemplateMappingService;
         private readonly IExcelTemplateService _excelTemplateService;
         private readonly IWebHostEnvironment _env;
         private readonly ILogger<ExcelController> _logger;
@@ -28,6 +29,7 @@ namespace RepFabric.Api.Controllers
         /// </summary>
         public ExcelController(
             IFileStorageService fileStorage,
+            IDynamoDbTemplateMappingService dynamoDbTemplateMappingService,
             IExcelTemplateService excelTemplateService,
             IConfiguration configuration,
             IWebHostEnvironment env,
@@ -35,6 +37,7 @@ namespace RepFabric.Api.Controllers
             IOptions<ExcelUploadSettings> excelUploadOptions)
         {
             _fileStorage = fileStorage;
+            _dynamoDbTemplateMappingService = dynamoDbTemplateMappingService;
             _excelTemplateService = excelTemplateService;
             _env = env;
             _logger = logger;
@@ -176,7 +179,7 @@ namespace RepFabric.Api.Controllers
             // Serialize the mapping list to JSON for storage
             var mappingJson = System.Text.Json.JsonSerializer.Serialize(request.Mappings);
 
-            await _excelTemplateService.SaveTemplateMappingAsync(request.TemplateFileName, mappingJson);
+            await _dynamoDbTemplateMappingService.CreateAsync(request.TemplateFileName, mappingJson);
             _logger.LogInformation("Mapping saved for template {TemplateFileName}.", request.TemplateFileName);
 
             return Ok("Mapping saved successfully.");
@@ -191,7 +194,7 @@ namespace RepFabric.Api.Controllers
         [ProducesResponseType(typeof(IEnumerable<TemplateMapping>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetMappings()
         {
-            var mappings = await _excelTemplateService.GetTemplateMappingsAsync();
+            var mappings = await _dynamoDbTemplateMappingService.GetAllAsync();
             return Ok(mappings);
         }
 
@@ -209,13 +212,7 @@ namespace RepFabric.Api.Controllers
         [ProducesResponseType(typeof(string), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteMapping([FromRoute] int id)
         {
-            var deleted = await _excelTemplateService.DeleteTemplateMappingAsync(id);
-            if (!deleted)
-            {
-                _logger.LogWarning("Mapping with id {Id} not found for deletion.", id);
-                return NotFound("Mapping not found.");
-            }
-
+            await _dynamoDbTemplateMappingService.DeleteAsync(id);
             _logger.LogInformation("Mapping with id {Id} deleted.", id);
             return Ok("Mapping deleted successfully.");
         }
@@ -245,12 +242,7 @@ namespace RepFabric.Api.Controllers
                 return BadRequest("TemplateFileName and MappingJson are required.");
             }
 
-            var updated = await _excelTemplateService.UpdateTemplateMappingAsync(id, request.TemplateFileName, request.MappingJson);
-            if (!updated)
-            {
-                _logger.LogWarning("Mapping with id {Id} not found for update.", id);
-                return NotFound("Mapping not found.");
-            }
+            await _dynamoDbTemplateMappingService.UpdateAsync(id, request);
 
             _logger.LogInformation("Mapping with id {Id} updated.", id);
             return Ok("Mapping updated successfully.");
@@ -265,7 +257,7 @@ namespace RepFabric.Api.Controllers
         /// 400 Bad Request if validation fails;
         /// 404 Not Found if the template does not exist.
         /// </returns>
-        [HttpPost("fill-template")]
+        [HttpGet("fill-template/{orderId}/{mappingId}")]
         [Produces("application/vnd.ms-excel.sheet.macroEnabled.12", "application/json")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(string), StatusCodes.Status400BadRequest)]
